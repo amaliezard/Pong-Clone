@@ -8,7 +8,6 @@
 * Academic Misconduct.
 **/
 
-
 #define GL_SILENCE_DEPRECATION
 #define STB_IMAGE_IMPLEMENTATION
 #include <SDL.h>
@@ -23,34 +22,31 @@
 
 #define LOG(msg) std::cout << msg << std::endl;
 
-constexpr int SCREEN_WIDTH = 1280;
-constexpr int SCREEN_HEIGHT = 960;
+constexpr int screen_width = 1280;
+constexpr int screen_height = 960;
 
-constexpr float RED = 0.9765625f, GREEN = 0.97265625f, BLUE = 0.9609375f, OPACITY = 1.0f;
+constexpr float red = 0.9765625f, green = 0.97265625f, blue = 0.9609375f, opacity = 1.0f;
 
-enum GameStatus { ACTIVE, FINISHED };
+enum game_status { active, finished };
 
 SDL_Window* window;
-GameStatus gameStatus = ACTIVE;
-ShaderProgram shaderProgram;
+game_status game_status = active;
+ShaderProgram shader_program;
 
+glm::mat4 view_matrix, left_paddle_matrix, right_paddle_matrix, ball_matrix, projection_matrix;
 
-glm::mat4 viewMatrix, leftPaddleMatrix, rightPaddleMatrix, ballMatrix, projectionMatrix;
+float previous_frame_time = 0.0f;
 
-float previousFrameTime = 0.0f;
+GLuint paddle_texture_id, ball_texture_id;
 
+float left_paddle_y = 0.0f;
+float right_paddle_y = 0.0f;
+float ball_x_speed = 2.3f;
+float ball_y_speed = 1.9f;
+glm::vec3 ball_position;
 
-GLuint paddleTextureID, ballTextureID;
-
-
-float leftPaddleY = 0.0f;
-float rightPaddleY = 0.0f;
-float ballXSpeed = 2.3f;
-float ballYSpeed = 1.9f;
-glm::vec3 ballPosition;
-
-bool rightPaddleAuto = false;
-bool isGameOver = false;
+bool right_paddle_auto = false;
+bool is_game_over = false;
 
 GLuint load_texture(const char* path) {
     int width, height, components;
@@ -74,29 +70,29 @@ GLuint load_texture(const char* path) {
 
 void initialise() {
     SDL_Init(SDL_INIT_VIDEO);
-    window = SDL_CreateWindow("Paddle Game Redesign", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_OPENGL);
+    window = SDL_CreateWindow("Paddle Game Redesign", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, screen_width, screen_height, SDL_WINDOW_OPENGL);
     SDL_GLContext context = SDL_GL_CreateContext(window);
     SDL_GL_MakeCurrent(window, context);
 
-    glViewport(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+    glViewport(0, 0, screen_width, screen_height);
 
-    shaderProgram.load("shaders/vertex_textured.glsl", "shaders/fragment_textured.glsl");
+    shader_program.load("shaders/vertex_textured.glsl", "shaders/fragment_textured.glsl");
 
-    projectionMatrix = glm::ortho(-1.777f, 1.777f, -1.0f, 1.0f, -1.0f, 1.0f);
-    viewMatrix = glm::mat4(1.0f);
+    projection_matrix = glm::ortho(-1.777f, 1.777f, -1.0f, 1.0f, -1.0f, 1.0f);
+    view_matrix = glm::mat4(1.0f);
 
-    glUseProgram(shaderProgram.get_program_id());
-    shaderProgram.set_projection_matrix(projectionMatrix);
-    shaderProgram.set_view_matrix(viewMatrix);
+    glUseProgram(shader_program.get_program_id());
+    shader_program.set_projection_matrix(projection_matrix);
+    shader_program.set_view_matrix(view_matrix);
 
-    glClearColor(RED, GREEN, BLUE, OPACITY);
+    glClearColor(red, green, blue, opacity);
 
     // Load textures
-    paddleTextureID = load_texture("textures/paddle.png");
-    ballTextureID = load_texture("textures/ball.png");
+    paddle_texture_id = load_texture("textures/paddle.png");
+    ball_texture_id = load_texture("textures/ball.png");
 
     // Initialize ball position and scaling
-    ballMatrix = glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f)), glm::vec3(0.2f, 0.2f, 1.0f));
+    ball_matrix = glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.0f)), glm::vec3(0.2f, 0.2f, 1.0f));
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -106,79 +102,79 @@ void process_input() {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_QUIT || event.type == SDL_WINDOWEVENT_CLOSE) {
-            gameStatus = FINISHED;
+            game_status = finished;
         }
     }
 
     const Uint8* keys = SDL_GetKeyboardState(NULL);
 
     if (keys[SDL_SCANCODE_W]) {
-        leftPaddleY += 0.05f;
+        left_paddle_y += 0.05f;
     }
     if (keys[SDL_SCANCODE_S]) {
-        leftPaddleY -= 0.05f;
+        left_paddle_y -= 0.05f;
     }
 
-    if (!rightPaddleAuto) {
+    if (!right_paddle_auto) {
         if (keys[SDL_SCANCODE_UP]) {
-            rightPaddleY += 0.05f;
+            right_paddle_y += 0.05f;
         }
         if (keys[SDL_SCANCODE_DOWN]) {
-            rightPaddleY -= 0.05f;
+            right_paddle_y -= 0.05f;
         }
     }
 
     if (keys[SDL_SCANCODE_T]) {
-        rightPaddleAuto = !rightPaddleAuto;
+        right_paddle_auto = !right_paddle_auto;
     }
 
-    leftPaddleY = glm::clamp(leftPaddleY, -0.75f, 0.75f);
-    rightPaddleY = glm::clamp(rightPaddleY, -0.75f, 0.75f);
+    left_paddle_y = glm::clamp(left_paddle_y, -0.75f, 0.75f);
+    right_paddle_y = glm::clamp(right_paddle_y, -0.75f, 0.75f);
 }
 
-bool check_collision(glm::vec3 ballPos, glm::vec3 paddlePos, float paddleWidth, float paddleHeight, float ballRadius) {
-    float paddleHalfW = paddleWidth / 2.0f;
-    float paddleHalfH = paddleHeight / 2.0f;
+bool check_collision(glm::vec3 ball_pos, glm::vec3 paddle_pos, float paddle_width, float paddle_height, float ball_radius) {
+    float paddle_half_w = paddle_width / 2.0f;
+    float paddle_half_h = paddle_height / 2.0f;
 
-    bool collisionX = ballPos.x + ballRadius >= paddlePos.x - paddleHalfW &&
-                      ballPos.x - ballRadius <= paddlePos.x + paddleHalfW;
+    bool collision_x = ball_pos.x + ball_radius >= paddle_pos.x - paddle_half_w &&
+                       ball_pos.x - ball_radius <= paddle_pos.x + paddle_half_w;
 
-    bool collisionY = ballPos.y + ballRadius >= paddlePos.y - paddleHalfH &&
-                      ballPos.y - ballRadius <= paddlePos.y + paddleHalfH;
+    bool collision_y = ball_pos.y + ball_radius >= paddle_pos.y - paddle_half_h &&
+                       ball_pos.y - ball_radius <= paddle_pos.y + paddle_half_h;
 
-    return collisionX && collisionY;
+    return collision_x && collision_y;
 }
 
 void update() {
-    float currentTime = (float)SDL_GetTicks() / 1000.0f;
-    float deltaTime = currentTime - previousFrameTime;
-    previousFrameTime = currentTime;
+    float current_time = (float)SDL_GetTicks() / 1000.0f;
+    float delta_time = current_time - previous_frame_time;
+    previous_frame_time = current_time;
 
-    if (isGameOver) return;
+    if (is_game_over) return;
 
-    leftPaddleMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(-1.6f, leftPaddleY, 0.0f));
-    rightPaddleMatrix = glm::translate(glm::mat4(1.0f), glm::vec3(1.6f, rightPaddleY, 0.0f));
+    left_paddle_matrix = glm::translate(glm::mat4(1.0f), glm::vec3(-1.6f, left_paddle_y, 0.0f));
+    right_paddle_matrix = glm::translate(glm::mat4(1.0f), glm::vec3(1.6f, right_paddle_y, 0.0f));
 
-    ballMatrix = glm::translate(ballMatrix, glm::vec3(ballXSpeed * deltaTime, ballYSpeed * deltaTime, 0.0f));
-    ballPosition = glm::vec3(ballMatrix[3]);
+    ball_matrix = glm::translate(ball_matrix, glm::vec3(ball_x_speed * delta_time, ball_y_speed * delta_time, 0.0f));
+    ball_position = glm::vec3(ball_matrix[3]);
 
-    if (ballPosition.y + 0.1f >= 1.0f || ballPosition.y - 0.1f <= -1.0f) {
-        ballYSpeed = -ballYSpeed;
+    if (ball_position.y + 0.1f >= 1.0f || ball_position.y - 0.1f <= -1.0f) {
+        ball_y_speed = -ball_y_speed;
     }
 
-    glm::vec3 leftPaddlePos = glm::vec3(leftPaddleMatrix[3]);
-    glm::vec3 rightPaddlePos = glm::vec3(rightPaddleMatrix[3]);
+    glm::vec3 left_paddle_pos = glm::vec3(left_paddle_matrix[3]);
+    glm::vec3 right_paddle_pos = glm::vec3(right_paddle_matrix[3]);
 
-    if (check_collision(ballPosition, leftPaddlePos, 0.2f, 1.0f, 0.1f)) {
-        ballXSpeed = fabs(ballXSpeed) * 1.2f;
+    if (check_collision(ball_position, left_paddle_pos, 0.2f, 1.0f, 0.1f)) {
+        ball_x_speed = fabs(ball_x_speed) * 1.2f;
     }
-    if (check_collision(ballPosition, rightPaddlePos, 0.2f, 1.0f, 0.1f)) {
-        ballXSpeed = -fabs(ballXSpeed) * 1.2f;
+    if (check_collision(ball_position, right_paddle_pos, 0.2f, 1.0f, 0.1f)) {
+        ball_x_speed = -fabs(ball_x_speed) * 1.2f;
     }
 
-    if (rightPaddleAuto) {
-        rightPaddleY += 0.03f * sin(SDL_GetTicks() / 1000.0f);
-        rightPaddleY = glm::clamp(rightPaddleY, -0.75f, 0.75f);
+    if (right_paddle_auto) {
+        right_paddle_y += 0.03f * sin(SDL_GetTicks() / 1000.0f);
+        right_paddle_y = glm::clamp(right_paddle_y, -0.75f, 0.75f);
     }
 }
 
@@ -190,31 +186,31 @@ void render() {
         -0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f
     };
 
-    float texCoords[] = {
+    float tex_coords[] = {
         0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f,
         0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f
     };
 
-    glVertexAttribPointer(shaderProgram.get_position_attribute(), 2, GL_FLOAT, false, 0, vertices);
-    glEnableVertexAttribArray(shaderProgram.get_position_attribute());
+    glVertexAttribPointer(shader_program.get_position_attribute(), 2, GL_FLOAT, false, 0, vertices);
+    glEnableVertexAttribArray(shader_program.get_position_attribute());
 
-    glVertexAttribPointer(shaderProgram.get_tex_coordinate_attribute(), 2, GL_FLOAT, false, 0, texCoords);
-    glEnableVertexAttribArray(shaderProgram.get_tex_coordinate_attribute());
+    glVertexAttribPointer(shader_program.get_tex_coordinate_attribute(), 2, GL_FLOAT, false, 0, tex_coords);
+    glEnableVertexAttribArray(shader_program.get_tex_coordinate_attribute());
 
-    shaderProgram.set_model_matrix(leftPaddleMatrix);
-    glBindTexture(GL_TEXTURE_2D, paddleTextureID);
+    shader_program.set_model_matrix(left_paddle_matrix);
+    glBindTexture(GL_TEXTURE_2D, paddle_texture_id);
     glDrawArrays(GL_TRIANGLES, 0, 6);
 
-    shaderProgram.set_model_matrix(rightPaddleMatrix);
-    glBindTexture(GL_TEXTURE_2D, paddleTextureID);
+    shader_program.set_model_matrix(right_paddle_matrix);
+    glBindTexture(GL_TEXTURE_2D, paddle_texture_id);
     glDrawArrays(GL_TRIANGLES, 0, 6);
 
-    shaderProgram.set_model_matrix(ballMatrix);
-    glBindTexture(GL_TEXTURE_2D, ballTextureID);
+    shader_program.set_model_matrix(ball_matrix);
+    glBindTexture(GL_TEXTURE_2D, ball_texture_id);
     glDrawArrays(GL_TRIANGLES, 0, 6);
 
-    glDisableVertexAttribArray(shaderProgram.get_position_attribute());
-    glDisableVertexAttribArray(shaderProgram.get_tex_coordinate_attribute());
+    glDisableVertexAttribArray(shader_program.get_position_attribute());
+    glDisableVertexAttribArray(shader_program.get_tex_coordinate_attribute());
 
     SDL_GL_SwapWindow(window);
 }
@@ -226,7 +222,7 @@ void shutdown() {
 int main(int argc, char* argv[]) {
     initialise();
 
-    while (gameStatus == ACTIVE) {
+    while (game_status == active) {
         process_input();
         update();
         render();
